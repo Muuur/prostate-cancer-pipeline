@@ -15,7 +15,7 @@
 # │                                                                          │
 # └──────────────────────────────────────────────────────────────────────────┘
 if (!require("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
+  install.packages("BiocManager", dependencies = TRUE, repos = "CRAN")
   BiocManager::install(version = "3.20")
 }
 pkgs <- installed.packages()
@@ -23,7 +23,7 @@ pkgs <- installed.packages()
 check_install <- function(lib, bioc = TRUE) {
   sprintf("Comprobando si el paquete %s está instalado\n", lib) |> cat()
   if (!lib %in% pkgs) {
-    cat("Instalando...\n")
+    sprintf("Instalando %s...\n", lib) |> cat()
     ifelse(
       bioc,
       BiocManager::install(
@@ -50,6 +50,7 @@ check_install("Biobase")
 check_install("oligo")
 check_install("oligoClasses")
 check_install("limma")
+check_install("GEOquery")
 check_install(Sys.getenv("ANNOTATION", unset = "org.Hs.eg.db"))
 
 # CRAN packages

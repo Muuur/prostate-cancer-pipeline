@@ -18,13 +18,21 @@ library(Biobase)
 library(limma)
 
 geo_id  <- Sys.getenv("GEO_ID")
-cel_rds <- Sys.getenv("OUTRMA")
+rma_rds <- Sys.getenv("OUTRMA")
 outdir  <- Sys.getenv("OUTDIR")
 probe   <- Sys.getenv("ANNOTATION")
 grp1    <- Sys.getenv("PDATA_GROUP1")
 grp2    <- Sys.getenv("PDATA_GROUP2")
 column  <- Sys.getenv("PDATA_COL")
-print(cel_rma <- readRDS(cel_rds))
+sep     <- Sys.getenv("METADATA_SEP")
+
+if (!file.exists(rma_rds)) {
+  sprintf("El archivo Rds %s no existe\n", rma_rds) |> cat()
+  quit(status = 1)
+}
+
+# Cargamos el rma
+print(cel_rma <- readRDS(rma_rds))
 
 create_plot <- function(png_name, plot_obj) {
   sprintf(
@@ -36,7 +44,7 @@ create_plot <- function(png_name, plot_obj) {
   dev.off()
 }
 
-# group membership for all samples
+# Obtenemos las posiciones de ambos grupos
 grp1_pos <- grepl(
   grp1,
   Biobase::pData(cel_rma)[, column],
@@ -49,7 +57,7 @@ grp2_pos <- grepl(
   ignore.case = TRUE
 ) |> which()
 
-# log2 transformation
+# Transformación log2
 ex <- Biobase::exprs(cel_rma)
 qx <- as.numeric(
   quantile(
@@ -67,41 +75,41 @@ if (logl) {
   exprs(cel_rma) <- log2(ex)
 }
 
-# assign samples to groups and set up design matrix
+# Asignar muestras a los grupos y crear la matriz de diseño
 cel_rma$group <- make.names(Biobase::pData(cel_rma)[, column]) |>
   factor()
 groups <- levels(cel_rma$group)
 design <- model.matrix(~ group + 0, cel_rma)
 colnames(design) <- groups
 
-# skip missing values
-cel_rma <- cel_rma[
-  complete.cases(Biobase::exprs(cel_rma)),
-]
+# Eliminar NAs
+cel_rma <- cel_rma[complete.cases(Biobase::exprs(cel_rma)), ]
 
-# fit linear model
+# Entrenar el modelo lineal
 fit <- limma::lmFit(cel_rma, design)
 
-# set up contrasts of interest and recalculate model coefficients
-cts <- paste(groups, collapse = "-")
-cont_matrix <- limma::makeContrasts(contrasts = cts, levels = design)
+# Crear los contrastes de interés
+cont_matrix <- limma::makeContrasts(
+  contrasts = paste(groups, collapse = "-"),
+  levels = design
+)
+
+# Recalcular el modelo
 fit2 <- limma::contrasts.fit(fit, cont_matrix) |>
   limma::eBayes(0.01)
+tt <- limma::topTable(fit2, adjust = "fdr", adjust.method = "BH", number = Inf)
 
-tt <- limma::topTable(fit2, adjust = "fdr", number = Inf)
-
-# TODO: write.table file
+# Guardar la tabla en un archivo
 write.table(
   tt,
   file = sprintf("%s/toptable.csv", outdir),
   row.names = FALSE,
-  sep = "\t",
+  sep = sep,
   quote = FALSE
 )
 
-# TODO: png file
 create_plot(
-  "hist",
+  "adj_pvalue_hist",
   hist(
     tt$adj.P.Val,
     col = "grey",
@@ -112,19 +120,22 @@ create_plot(
   )
 )
 
-# summarize test results as "up", "down" or "not expressed"
+# Resumen de los resultados como "up", "down" o "not expressed"
 dt <- limma::decideTests(
-  fit2, adjust.method = "fdr", p.value = 0.05, lfc = 0
+  fit2,
+  adjust.method = "fdr",
+  p.value = 0.05,
+  lfc = 0
 )
 
-# Venn diagram of results
+# Diagrama de Venn de los resultados
 create_plot(
   "venn",
   limma::vennDiagram(dt, circle.col = palette())
 )
 
-# create Q-Q plot for t-statistic
-t_good <- which(!is.na(fit2$F)) # filter out bad probes
+# Q-Q plot del t-statistic
+t_good <- which(!is.na(fit2$F))
 create_plot(
   "qplot",
   limma::qqt(
@@ -134,11 +145,7 @@ create_plot(
   )
 )
 
-# volcano plot (log P-value vs log fold change)
-# Please note that the code provided to generate graphs serves as a guidance to
-# the users. It does not replicate the exact GEO2R web display due to multitude
-# of graphical options.
-# The following will produce basic volcano plot using limma function:
+# Volcano plot (log P-value vs log fold change)
 create_plot(
   "volcano",
   limma::volcanoplot(
@@ -152,7 +159,7 @@ create_plot(
 )
 
 # MD plot (log fold change vs mean log expression)
-# highlight statistically significant (p-adj < 0.05) probes
+# REsalta los estadísticamente signiicativos, muestras cuyo p-adj < 0.05
 create_plot(
   "plot_md",
   limma::plotMD(
@@ -165,16 +172,7 @@ create_plot(
   )
 )
 
-# box-and-whisker plot
-ord <- order(cel_rma$group)  # order samples by group
-palette(
-  c(
-    "#1B9E77", "#7570B3", "#E7298A", "#E6AB02", "#D95F02",
-    "#66A61E", "#A6761D", "#B32424", "#B324B3", "#666666"
-  )
-)
-
-# expression value distribution
+# Distribución de valores de expresión
 create_plot(
   "densities",
   limma::plotDensities(
@@ -185,7 +183,7 @@ create_plot(
   )
 )
 
-# mean-variance trend, helps to see if precision weights are needed
+# mean-variance trend, comporbar si los pesos de precisión son necesarios
 create_plot(
   "plot_sa",
   limma::plotSA(fit2, main = sprintf("Mean variance trend, %s", geo_id))

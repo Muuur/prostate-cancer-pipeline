@@ -19,17 +19,24 @@ library(oligoClasses)
 
 cel_rds <- Sys.getenv("OUTCEL")
 celdir  <- Sys.getenv("CELDIR")
+force   <- Sys.getenv("FORCE") |> toupper() == "TRUE"
+
+if (file.exists(cel_rds) && !force) {
+  sprintf(
+    "El archivo Rds %s ya existe, pasando al siguiente paso\n",
+    cel_rds
+  ) |> cat()
+  quit(status = 0)
+}
 
 if (length(oligoClasses::list.celfiles(celdir, listGzipped = TRUE)) == 0) {
   sprintf(
     "You must download the CEL files previously and put them in %s folder\n",
     celdir
-  ) |>
-    cat()
+  ) |> cat()
   quit(status = 1)
 }
 
-cat("Loading CEL files\n")
 oligoClasses::list.celfiles(
   celdir,
   full.names = TRUE,
